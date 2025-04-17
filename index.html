@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I WATCH - Plastic Type Detector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <!-- Add jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        #preview-container {
+            width: auto;
+            padding: 10px;
+            padding-top: 30px;
+            height: auto;
+            text-align: center;
+            border-radius: 5px;
+            padding: 20px;
+        }
+        #preview-image {
+            max-width: 400px;
+            max-height: 400px;
+            object-fit: contain;
+        }
+        #result-container {
+            text-align: center;
+        }
+
+        /* Hide the phone camera button on larger screens */
+        @media (min-width: 768px) {
+            #open-phone-btn {
+                display: none;
+            }
+        }
+        /* Hide the web camera button on small screens */
+        @media (max-width: 768px) {
+            #open-webcam-btn {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            #preview-image {
+                max-width: 250px;
+            }
+        }
+        
+        /* Print styles for PDF export */
+        @media print {
+            body {
+                padding: 20px;
+                font-family: Arial, sans-serif;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+            
+            #pdf-content {
+                display: block !important;
+            }
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col md:flex-row">
+    <!-- Sidebar -->
+    <div class="w-full md:w-64 bg-white p-4 md:h-screen shadow-md no-print">
+        <div class="mb-6 flex items-center justify-center md:justify-start">
+            <div class="bg-gray-200 w-12 h-12 flex items-center justify-center rounded-md mr-2">
+                <i class="fas fa-eye text-2xl text-gray-600"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800">I WATCH</h1>
+        </div>
+
+        <div class="mb-4">
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-md p-6 text-center cursor-pointer hover:border-blue-400 transition duration-150">
+                <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                <p class="text-gray-600">Drag & Drop Image</p>
+                <p class="text-gray-400 text-xs mt-1">or use buttons below</p>
+            </div>
+        </div>
+
+        <input id="file-upload" type="file" accept="image/*" class="hidden">
+
+        <button id="open-file-btn" class="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition duration-150 mb-2">
+            <i class="fas fa-folder-open mr-2"></i> Open File
+        </button>
+
+        <button id="open-webcam-btn" class="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition duration-150 mb-2">
+            <i class="fas fa-camera mr-2"></i> Open Webcam
+        </button>
+
+        <button id="open-phone-btn" class="w-full bg-purple-500 text-white py-2 px-4 rounded-md hover:bg-purple-600 transition duration-150 mb-2">
+            <i class="fas fa-mobile-alt mr-2"></i> Open Phone Camera
+        </button>
+
+        <button id="predict-btn" class="w-full bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600 transition duration-150 disabled:bg-gray-400 disabled:cursor-not-allowed mb-4" disabled>
+            <i class="fas fa-magic mr-2"></i> Predict
+        </button>
+        
+        <div id="loading" class="hidden flex justify-center items-center my-4">
+            <div class="spinner mr-3"></div>
+            <span class="text-gray-600">Processing...</span>
+        </div>
+
+        <button id="download-pdf-btn" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition duration-150 hidden">
+            <i class="fas fa-download mr-2"></i> Download Report
+        </button>
+    </div>
+
+    <!-- Main content -->
+    <div class="flex-grow p-4 md:p-8">
+        <div class="max-w-4xl mx-auto">
+            <!-- Content for PDF generation (hidden initially) -->
+            <div id="pdf-content" class="hidden">
+                <div class="flex items-center mb-6">
+                    <div class="bg-gray-200 w-12 h-12 flex items-center justify-center rounded-md mr-2">
+                        <i class="fas fa-eye text-2xl text-gray-600"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-gray-800">I WATCH Plastic Analysis Report</h1>
+                </div>
+                <div id="pdf-image-container" class="mb-6 text-center">
+                    <img id="pdf-image" src="" alt="Analyzed plastic" class="max-h-60 mx-auto">
+                </div>
+                <div id="pdf-result" class="mb-6"></div>
+                <div id="pdf-insights"></div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Left column: Preview and Result -->
+                <div>
+                    <div id="preview-container" class="mb-6 hidden bg-white rounded-lg shadow-md p-6">
+                        <h2 class="text-lg font-semibold mb-4 text-gray-800">Image Preview</h2>
+                        <div class="flex justify-center">
+                            <img id="preview-image" src="" alt="Preview" class="rounded-md border border-gray-200">
+                        </div>
+                    </div>
+
+                    <div id="webcam-container" class="mb-6 hidden bg-white rounded-lg shadow-md p-6">
+                        <h2 class="text-lg font-semibold mb-4 text-gray-800">Camera</h2>
+                        <video id="webcam" class="w-full rounded-md border border-gray-200" autoplay></video>
+                        <button id="capture-btn" class="mt-4 bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition duration-150 w-full">
+                            <i class="fas fa-camera mr-2"></i> Capture Photo
+                        </button>
+                    </div>
+
+                    <div id="result-container" class="mt-6 hidden bg-white rounded-lg shadow-md p-6">
+                        <h2 class="text-lg font-semibold mb-4 text-gray-900">Prediction Result</h2>
+                        <div id="result-text" class="text-gray-900 p-3 bg-blue-50 rounded-md border border-blue-100"></div>
+                    </div>
+                </div>
+
+                <!-- Right column: Insights -->
+                <div id="llm-insights-container" class="hidden bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-bold mb-4 text-gray-900">Plastic Insights</h2>
+                    <div id="insights-content" class="text-gray-800"></div>
+                    <div id="eco-tip" class="mt-6 p-4 bg-green-50 rounded-md border border-green-200">
+                        <h3 class="font-semibold text-green-800"><i class="fas fa-leaf mr-2"></i>Eco Tip</h3>
+                        <p id="eco-tip-text" class="text-green-700 mt-2"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+<script>
+    // Initialize jsPDF
+    const { jsPDF } = window.jspdf;
+    
+    // Cache DOM elements for ease of access
+    const dropZone = document.getElementById('drop-zone');        // Drop zone area for drag-and-drop
+    const fileUpload = document.getElementById('file-upload');    // Hidden file input for image upload
+    const previewContainer = document.getElementById('preview-container'); // Container to show image preview
+    const previewImage = document.getElementById('preview-image'); // Image element for preview
+    const predictBtn = document.getElementById('predict-btn');    // Button to trigger prediction
+    const resultContainer = document.getElementById('result-container'); // Container to show prediction results
+    const resultText = document.getElementById('result-text');    // Text element to show result details
+    const webcam = document.getElementById('webcam');            // Video element to show webcam feed
+    const captureBtn = document.getElementById('capture-btn');    // Button to capture photo from webcam
+    const webcamContainer = document.getElementById('webcam-container'); // Container to show webcam interface
+    const openFileBtn = document.getElementById('open-file-btn');  // Button to open file dialog
+    const openWebcamBtn = document.getElementById('open-webcam-btn'); // Button to open webcam
+    const openPhoneBtn = document.getElementById('open-phone-btn');  // Button to open phone camera
+    const insightsContainer = document.getElementById('insights-content'); // Container for insights content
+    const ecoTipText = document.getElementById('eco-tip-text');  // Text element for eco tips
+    const downloadPdfBtn = document.getElementById('download-pdf-btn'); // Button to download PDF
+    const loadingIndicator = document.getElementById('loading'); // Loading spinner
+    
+    // PDF elements
+    const pdfContent = document.getElementById('pdf-content');
+    const pdfImage = document.getElementById('pdf-image');
+    const pdfResult = document.getElementById('pdf-result');
+    const pdfInsights = document.getElementById('pdf-insights');
+
+    let selectedFile = null;       // Variable to hold the selected file
+    let webcamStream = null;       // Variable to hold the webcam stream
+    let lastPrediction = null;     // Variable to hold the last prediction result
+    let lastInsights = null;       // Variable to hold the last insights result
+
+    // Function to format insights HTML
+    function formatInsightsHTML(htmlContent) {
+        return htmlContent; // The server already sends formatted HTML
+    }
+
+    // Function to add eco tip based on plastic type
+    function addEcoTip(container, plasticType) {
+        const ecoTips = {
+            "HDPE (High-Density Polyethylene)": "HDPE is widely recycled. Rinse containers before recycling and remove any labels when possible. Consider reusing HDPE containers for storage solutions at home.",
+            "PET (polyethylene terephthalate)": "PET bottles should be emptied, rinsed, and crushed before recycling to save space. Avoid reusing single-use PET bottles repeatedly as they can leach chemicals when used multiple times.",
+            "PP (polypropylene)": "PP can be difficult to recycle in some areas. Consider reusing PP containers for storage. When purchasing new items, look for products made from recycled PP to close the loop.",
+            "PVC (Polyvinyl chloride)": "PVC is rarely recycled and can be harmful. Look for PVC-free alternatives when possible. When disposing of PVC products, check with local waste management facilities for proper disposal methods.",
+            "OTHERS": "Mixed or unknown plastics are difficult to recycle. Consider reducing usage of these materials and switching to more easily identified and recycled plastics like HDPE or PET."
+        };
+
+        // Extract the plastic type code from the full string
+        let plasticCode = plasticType;
+        if (plasticType.includes("(")) {
+            plasticCode = plasticType.split("(")[0].trim();
+        }
+
+        // Set the eco tip text
+        ecoTipText.textContent = ecoTips[plasticType] || 
+            "Consider reducing plastic use by choosing reusable alternatives whenever possible.";
+    }
+
+    // Function to generate PDF
+    async function generatePDF() {
+        // Show loading indicator
+        loadingIndicator.classList.remove('hidden');
+        
+        try {
+            // Copy data to PDF content area
+            pdfImage.src = previewImage.src;
+            pdfResult.innerHTML = resultText.innerHTML;
+            pdfInsights.innerHTML = insightsContainer.innerHTML + document.getElementById('eco-tip').outerHTML;
+            
+            // Show the PDF content for HTML2Canvas to capture
+            pdfContent.classList.remove('hidden');
+            
+            // Generate PDF with multiple pages if needed
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            
+            // Capture the content
+            const canvas = await html2canvas(pdfContent, {
+                scale: 2,
+                logging: false,
+                useCORS: true
+            });
+            
+            // Add image to PDF
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = pageWidth - 20; // 10mm margins on each side
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            
+            // Add content to PDF (handling multiple pages if needed)
+            let heightLeft = imgHeight;
+            let position = 10; // starting at 10mm from top
+            
+            // First page
+            pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+            heightLeft -= (pageHeight - 20);
+            
+            // Additional pages if content is too long
+            while (heightLeft > 0) {
+                position = 10 - (pageHeight - 20); // reposition to top of next page
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+                heightLeft -= (pageHeight - 20);
+            }
+            
+            // Save the PDF
+            pdf.save('I-WATCH-Plastic-Analysis.pdf');
+            
+            // Hide the PDF content again
+            pdfContent.classList.add('hidden');
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            alert('Error generating PDF. Please try again.');
+        } finally {
+            // Hide loading indicator
+            loadingIndicator.classList.add('hidden');
+        }
+    }
+
+    // Event listener for the "Download PDF" button
+    downloadPdfBtn.addEventListener('click', generatePDF);
+
+    // Event listener for the "Open File" button to trigger file input
+    openFileBtn.addEventListener('click', () => fileUpload.click());
+
+    // Event listener for the "Open Webcam" button to access the webcam
+    openWebcamBtn.addEventListener('click', async () => {
+        try {
+            // Request access to the webcam
+            webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            webcam.srcObject = webcamStream;    // Set the webcam feed as the source of the video element
+            webcamContainer.classList.remove('hidden'); // Show the webcam container
+            previewContainer.classList.add('hidden');    // Hide the preview container
+            downloadPdfBtn.classList.add('hidden'); // Hide download button
+        } catch (error) {
+            console.error('Error accessing webcam:', error); // Log error if webcam access fails
+            alert('Unable to access the webcam. Please check your browser settings.');
+        }
+    });
+
+    // Event listener for the "Open Phone Camera" button to access the back camera
+    openPhoneBtn.addEventListener('click', async () => {
+        try {
+            const constraints = {
+                video: {
+                    facingMode: { exact: "environment" } // Request back camera
+                }
+            };
+
+            webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+            webcam.srcObject = webcamStream;
+            webcamContainer.classList.remove('hidden'); // Show the webcam container
+            previewContainer.classList.add('hidden');    // Hide the preview container
+            downloadPdfBtn.classList.add('hidden'); // Hide download button
+        } catch (error) {
+            console.error('Error accessing back camera:', error); // Log error if back camera access fails
+            alert('Unable to access the phone camera. Please try the front camera or upload an image.'); // Alert user if camera access fails
+            
+            // Try with front camera as fallback
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                webcam.srcObject = webcamStream;
+                webcamContainer.classList.remove('hidden');
+                previewContainer.classList.add('hidden');
+            } catch (innerError) {
+                console.error('Error accessing any camera:', innerError);
+            }
+        }
+    });
+
+    // Event listener for the "Capture Photo" button to take a picture from the webcam
+    captureBtn.addEventListener('click', () => {
+        const canvas = document.createElement('canvas'); // Create a canvas element to draw the image
+        canvas.width = webcam.videoWidth; // Set canvas width to match the video feed
+        canvas.height = webcam.videoHeight; // Set canvas height to match the video feed
+        const context = canvas.getContext('2d'); // Get the canvas 2D drawing context
+        context.drawImage(webcam, 0, 0, canvas.width, canvas.height); // Draw the video frame to the canvas
+
+        canvas.toBlob((blob) => {
+            // Convert canvas content to a Blob and create a File object
+            selectedFile = new File([blob], 'phone-photo.jpg', { type: 'image/jpeg' });
+            previewImage.src = canvas.toDataURL('image/jpeg'); // Set the preview image source
+            previewContainer.classList.remove('hidden'); // Show the preview container
+            webcamContainer.classList.add('hidden'); // Hide the webcam container
+            predictBtn.disabled = false; // Enable the predict button
+            downloadPdfBtn.classList.add('hidden'); // Hide download button
+
+            // Stop the camera stream after capturing the photo
+            webcamStream.getTracks().forEach(track => track.stop());
+        });
+    });
+
+    // Event listener for clicking the drop zone to trigger file input
+    dropZone.addEventListener('click', () => fileUpload.click());
+
+    // Event listener for drag over event on the drop zone to highlight it
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); // Prevent default drag behavior
+        dropZone.classList.add('border-blue-500'); // Highlight the drop zone
+    });
+
+    // Event listener for dragging leaves the drop zone to remove highlight
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-blue-500'); // Remove drop zone highlight
+    });
+
+    // Event listener for dropping files into the drop zone
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault(); // Prevent default drop behavior
+        dropZone.classList.remove('border-blue-500'); // Remove drop zone highlight
+        handleFile(e.dataTransfer.files[0]); // Handle the dropped file
+    });
+
+    // Event listener for file input change event
+    fileUpload.addEventListener('change', (e) => {
+        handleFile(e.target.files[0]); // Handle the selected file
+    });
+
+    // Function to handle the selected or dropped file
+    function handleFile(file) {
+        if (file && file.type.startsWith('image/')) { // Check if the file is an image
+            selectedFile = file; // Store the selected file
+            const reader = new FileReader(); // Create a FileReader to read the file
+            reader.onload = (e) => {
+                previewImage.src = e.target.result; // Set the preview image source
+                previewContainer.classList.remove('hidden'); // Show the preview container
+                webcamContainer.classList.add('hidden'); // Hide the webcam container
+                predictBtn.disabled = false; // Enable the predict button
+                downloadPdfBtn.classList.add('hidden'); // Hide download button
+                
+                // Hide result and insights if they were showing
+                resultContainer.classList.add('hidden');
+                document.getElementById('llm-insights-container').classList.add('hidden');
+            };
+            reader.readAsDataURL(file); // Read the file as a Data URL
+        }
+    }
+
+    // Event listener for the "Predict" button to send the image for prediction
+    predictBtn.addEventListener('click', async () => {
+        if (!selectedFile) return; // Return if no file is selected
+        
+        // Show loading indicator
+        loadingIndicator.classList.remove('hidden');
+        predictBtn.disabled = true;
+
+        const formData = new FormData(); // Create a FormData object to send the file
+        formData.append('file', selectedFile); // Append the file to the FormData
+
+        try {
+            // Send the file to the prediction endpoint
+            const response = await fetch('http://localhost:5500/predict', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('Network response was not ok'); // Throw an error if response is not OK
+            }
+
+            const result = await response.json(); // Parse the JSON response
+            lastPrediction = result; // Store the prediction result
+            
+            // Format confidence value as percentage
+            const confidencePercent = (result.confidence * 100).toFixed(1);
+            
+            // Create a confidence bar with color based on confidence level
+            let confidenceColor = "bg-green-500";
+            if (confidencePercent < 70) confidenceColor = "bg-yellow-500";
+            if (confidencePercent < 50) confidenceColor = "bg-red-500";
+            
+            const confidenceBar = `
+                <div class="mt-2 mb-1">Confidence: ${confidencePercent}%</div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div class="${confidenceColor} h-2.5 rounded-full" style="width: ${confidencePercent}%"></div>
+                </div>
+            `;
+            
+            // Update the result display
+            resultText.innerHTML = `
+                <div class="text-xl font-bold mb-2">${result.class}</div>
+                ${confidenceBar}
+            `;
+            resultContainer.classList.remove('hidden'); // Show the result container
+
+            // Hide any previous insights
+            document.getElementById('llm-insights-container').classList.add('hidden');
+
+            // Fetch insights from LLM
+            const insightsResponse = await fetch('http://localhost:5500/insights', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ plastic_type: result.class })
+            });
+    
+            if (!insightsResponse.ok) {
+                throw new Error('Failed to fetch insights');
+            }
+            
+            const insightsResult = await insightsResponse.json();
+            lastInsights = insightsResult; // Store the insights result
+            
+            // Format insights as HTML
+            insightsContainer.innerHTML = formatInsightsHTML(insightsResult.insight);
+            
+            // Add eco tip
+            addEcoTip(insightsContainer, result.class);
+            
+            // Show the insights container
+            document.getElementById('llm-insights-container').classList.remove('hidden');
+            
+            // Show the download button
+            downloadPdfBtn.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('Error:', error);
+            resultText.innerHTML = `
+                <div class="text-red-600 font-medium">
+                    <i class="fas fa-exclamation-circle mr-2"></i> 
+                    An error occurred during prediction.
+                </div>
+                <p class="text-gray-600 text-sm mt-2">Please try again or check your connection.</p>
+            `;
+            resultContainer.classList.remove('hidden');
+        } finally {
+            // Hide loading indicator
+            loadingIndicator.classList.add('hidden');
+            predictBtn.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
