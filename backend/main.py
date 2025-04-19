@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # Load TensorFlow model
-MODEL = tf.keras.models.load_model("./models/1.keras")
+MODEL = tf.keras.models.load_model("models/1.keras")
 CLASS_NAMES = [
     "HDPE (High-Density Polyethylene)",
     "OTHERS",
@@ -32,9 +32,9 @@ CLASS_NAMES = [
 
 @app.get("/ping")
 async def ping():
-    return {"message": "Hello, Badi"}
+    return {"message": "Hello from Vercel!"}
 
-# Helper to convert image
+# Image loader
 def read_file_as_image(data) -> np.ndarray:
     image = np.array(Image.open(BytesIO(data)))
     return image
@@ -49,19 +49,17 @@ async def predict(file: UploadFile = File(...)):
     predicted_class = CLASS_NAMES[np.argmax(prediction[0])]
     confidence = float(np.max(prediction[0]))
 
-    print(f"Prediction: {predicted_class}, Confidence: {confidence:.2f}")
-
     return {
         "class": predicted_class,
         "confidence": confidence,
         "prediction": f"<h2>Plastic Type Prediction</h2><p><strong>Class:</strong> {predicted_class}</p><p><strong>Confidence:</strong> {confidence:.2f}</p>"
     }
 
-# Request model
+# Insights request body
 class InsightRequest(BaseModel):
     plastic_type: str
 
-# Clean Gemini's markdown response
+# Clean Gemini markdown response
 def clean_json_output(response_text: str) -> str:
     match = re.search(r"```json\s*(\{.*?\})\s*```", response_text, re.DOTALL)
     if match:
@@ -77,45 +75,30 @@ def clean_json_output(response_text: str) -> str:
 @app.post("/insights")
 async def get_insights(request: InsightRequest):
     prompt = f"""
-    Provide a JSON object with the following structure only, without extra text or markdown formatting:
-
+    Provide a JSON object with the following structure only:
     {{
-      "Plastic_name": "Full name of the plastic type",
-      "Common_uses": ["list of common uses"],
-      "Recycling_category": "Recycling number or symbol (e.g. #1)",
-      "Environmental_impact": "Concise but detailed environmental impact",
-      "Alternatives": ["list of sustainable alternatives"]
+      "Plastic_name": "",
+      "Common_uses": [],
+      "Recycling_category": "",
+      "Environmental_impact": "",
+      "Alternatives": []
     }}
-
     The plastic type is: {request.plastic_type}
     """
 
     try:
-        # Gemini API request
         response = requests.post(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDqcZHYRtufGxHuy4RGrFKe05aIUL96E6s",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_API_KEY",
             headers={"Content-Type": "application/json"},
             json={"contents": [{"parts": [{"text": prompt}]}]}
         )
         gemini_data = response.json()
 
-        # Debug full response
-        print("\nFull Gemini API response:\n", json.dumps(gemini_data, indent=2))
-
         if "candidates" not in gemini_data:
-            print("Gemini response missing 'candidates':", gemini_data)
-            return {"insight": "<p>Gemini API did not return a valid response. Please try again later.</p>"}
+            return {"insight": "<p>Gemini API returned no candidates. Try again later.</p>"}
 
-        try:
-            raw_output = gemini_data['candidates'][0]['content']['parts'][0]['text']
-        except (KeyError, IndexError) as e:
-            print("Error accessing Gemini content:", e)
-            return {"insight": "<p>Unexpected response format from Gemini. Please try again later.</p>"}
-
-        print("\nGemini Raw Response:\n", raw_output)
+        raw_output = gemini_data["candidates"][0]["content"]["parts"][0]["text"]
         cleaned = clean_json_output(raw_output)
-        print("\nCleaned JSON for parsing:\n", cleaned)
-
         structured = json.loads(cleaned)
 
         html_output = f"""
@@ -132,13 +115,6 @@ async def get_insights(request: InsightRequest):
 
         return {"insight": html_output}
 
-    except json.JSONDecodeError as e:
-        print("Error processing Gemini response:", e)
-        return {"insight": "<p>Could not parse structured insights. Please try again later.</p>"}
     except Exception as e:
-        print("General error:", e)
-        return {"insight": "<p>Error generating insights. Please check your input or try again later.</p>"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="localhost", port=5500)
+        print("Error generating insight:", e)
+        return {"insight": "<p>Error generating insight. Try again later.</p>"}
